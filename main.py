@@ -40,10 +40,11 @@ def main():
     # Analyze some mp4 video
     # file = 'DT inside back door_20180109_080816.mp4'
 
-    # file = 'monon_person_dog_20180130_122001.mp4'
-    file = 'monon_1_bike_20180130_121732.mp4'
-    #file = 'monon_1_person_20180130_120128.mp4'
-    # file = 'piero_enters_bike_dt_20180130_133618.mp4'
+    file = 'monon_person_dog_20180130_122001.mp4'
+#    file = 'monon_1_bike_20180130_121732.mp4'
+    file = 'monon_1_person_20180130_120128.mp4'
+    file = 'steph_exit_dt_20180130_124658.mp4'
+    #file = 'piero_enters_bike_dt_20180130_133618.mp4'
 
     # start_detect.start_face_detect(BUCKET, file)
     # start_detect.start_label_detect(BUCKET, file)

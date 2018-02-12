@@ -13,10 +13,6 @@
     # "TopicArn": "arn:aws:sns:us-east-1:275072183127:AmazonRekognition-Result",
     # "Message": "{\"JobId\":\"f40f6c76f87f5c9aeea9a50b3d53688a4174711f9b1f20392c044e21f71c5e4d\",\"Status\":\"SUCCEEDED\",\"API\":\"StartFaceDetection\",\"JobTag\":\"jobtag-1515751503\",\"Timestamp\":1515733532180,\"Video\":{\"S3ObjectName\":\"DT inside back door_20180109_080816.mp4\",\"S3Bucket\":\"vsaas-rekog-test\"}}",
     # "Timestamp": "2018-01-12T05:05:32.281Z",
-    # "SignatureVersion": "1",
-    # "Signature": "PqHbNU5Z3d7AxX2Vub82oO7gWjRLb9i1heyk4jECsbw0UX/RERLetE2d7PKFPhGkrImalyRps6PXfelVIvmoh2nm1o2Eji/a2IrOlG1GijLTbmCs7OAjYFUxiaakC5JUrocw6fQRhKtuw7LbuKRLcVjUqSEePq7/HvqQLBZ14gpv2icTsv47tluxelTcTJQ//ME+Jkpzj6k8UDvExJ9zltHF8+lLC482eVhZ4LvdXdSMmSfd4QSmr8tlZn9BqvboVpt7VR8pbBo6W7t9P9LYsDmw4s9nMepXIbKI/85XVTi+Pq0/XUGQXbmdIqa0s3dqKuHi3pNpm42/ReQ1+5h1wA==",
-    # "SigningCertURL": "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-433026a4050d206028891664da859041.pem",
-    # "UnsubscribeURL": "https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:us-east-1:275072183127:AmazonRekognition-Result:a0f69abb-a2e0-4144-b592-e0c182b4026c"
 
 """
 import boto3
@@ -28,17 +24,17 @@ import pprint
 
 REGION = os.environ.get('AWS_REGION', 'us-east-1')
 MAX_LABELS = os.environ.get('MAX_LABELS', 123)
+LOCAL_DIR = '/Users/piero/Documents/exacqVision Files/'
 pp = pprint.PrettyPrinter(indent=4)
 
 
-def on_label_detect(rekog_client, job_id, job_tag):
+def on_label_detect(rekog_client, rekog_msg):
     unique_labels = set()
-
-    # get paginated results
+    job_id = rekog_msg['JobId']
     next_token = ''
     result = None
+
     while next_token is not None:
-        print('Getting paged label_detect result')
         result = rekog_client.get_label_detection(
             JobId=job_id,
             MaxResults=MAX_LABELS,
@@ -57,18 +53,25 @@ def on_label_detect(rekog_client, job_id, job_tag):
 
             unique_labels.add(label['Label']['Name'])
 
-    print('-------------------- Results from Rekognition.StartFaceDetection ------------------')
-    print('{Codec} {DurationMillis} {Format} {FrameHeight} {FrameRate} {FrameWidth}'.format(**result['VideoMetadata']))
-    print('DetectLabel Unique Label results for job_id={}'.format(job_id))
+    print('-------------------- Results from Rekognition.StartLabelDetection ------------------')
+    print('job_id={}'.format(job_id))
+#    print('{Codec} {DurationMillis} {Format} {FrameHeight} {FrameRate} {FrameWidth}'.format(**result['VideoMetadata']))
     pp.pprint(unique_labels)
     return unique_labels
 
 
-def on_face_detect(rekog_client, job_id, job_tag):
+def on_face_detect(rekog_client, rekog_msg):
     # get paginated results
     next_token = ''
+    job_id = rekog_msg['JobId']
+
+    videofile = LOCAL_DIR + rekog_msg['Video']['S3ObjectName']
+    ffmpeg_boxes = []
+
+    print('-------------------- Results from Rekognition.StartFaceDetection ------------------')
+    print('job_id={}'.format(job_id))
+
     while next_token is not None:
-        print('Getting paged face_detect result')
         result = rekog_client.get_face_detection(
             JobId=job_id,
             MaxResults=MAX_LABELS,
@@ -76,20 +79,23 @@ def on_face_detect(rekog_client, job_id, job_tag):
         )
         next_token = result.get('NextToken')
 
-        # Perform clip/face tagging somewhere here
-        print('FaceDetect results for job_id={}'.format(job_id))
-        pp.pprint(result)
+        if os.path.exists(videofile):
+            ffmpeg_boxes.extend(convert_to_ffmpeg_boxes(result['VideoMetadata'], result['Persons']))
+
+    render_ffmpeg_bounding_boxes(videofile, ffmpeg_boxes)
 
 
-def on_person_track(rekog_client, job_id, job_tag):
+def on_person_track(rekog_client, rekog_msg):
     # get paginated results
     next_token = ''
+    job_id = rekog_msg['JobId']
+    videofile = LOCAL_DIR + rekog_msg['Video']['S3ObjectName']
+    ffmpeg_boxes = []
 
     print('-------------------- Results from Rekognition.StartPersonTracking ------------------')
-    print('PersonTrack results for job_id={}'.format(job_id))
+    print('job_id={}'.format(job_id))
 
     while next_token is not None:
-        print('Getting paged person_track result')
         result = rekog_client.get_person_tracking(
             JobId=job_id,
             MaxResults=MAX_LABELS,
@@ -98,8 +104,10 @@ def on_person_track(rekog_client, job_id, job_tag):
         )
         next_token = result.get('NextToken')
 
-        # Perform clip/face tagging somewhere here
-        pp.pprint(result)
+        if os.path.exists(videofile):
+            ffmpeg_boxes.extend(convert_to_ffmpeg_boxes(result['VideoMetadata'], result['Persons']))
+
+    render_ffmpeg_bounding_boxes(videofile, ffmpeg_boxes)
 
 
 def lambda_handler(event, context):
@@ -124,11 +132,11 @@ def lambda_handler(event, context):
 
     # Only handle selected rekog api results.  Discard anything else.
     if 'StartLabelDetect' in api_name:
-        on_label_detect(rekog_client, job_id, job_tag)
+        on_label_detect(rekog_client, rekog_msg)
     elif 'StartFaceDetect' in api_name:
-        on_face_detect(rekog_client, job_id, job_tag)
+        on_face_detect(rekog_client, rekog_msg)
     elif 'StartPersonTracking' in api_name:
-        on_person_track(rekog_client, job_id, job_tag)
+        on_person_track(rekog_client, rekog_msg)
     else:
         print('No result handler for api_name={}'.format(api_name))
 
@@ -171,3 +179,75 @@ class RekogResultListener(Thread):
 
         print('Thread stop ', self.name)
 
+
+def convert_to_ffmpeg_boxes(videometa, persons):
+    # persons is a list of tracking result time-series bounding boxes, sorted by TIMESTAMP
+    # see https://stackoverflow.com/questions/17339841/ffmpeg-drawbox-on-a-given-frame
+
+    frame_height = videometa['FrameHeight']
+    frame_width = videometa['FrameWidth']
+    fps = int(round(videometa['FrameRate'], 0))
+    box_colors = ['yellow', 'red', 'white', 'green', 'lightcyan']  # TODO only handles 5 persons per image
+
+    # Assumes that persons is a list of persons and their bounding box timelines.
+    prev_frame = None
+    ffmpeg_boxes = []
+    for person in persons:
+        # convert box coordinates from normalized floats, to pixel ints
+        p = person['Person']
+
+        # it seems that sometimes, Rekognition can mix Person and Face detection results together ..
+        bb = p.get('BoundingBox')
+        if bb is None:
+            bb = p['Face'].get('BoundingBox')
+
+        box_height = int(round(bb['Height'] * frame_height, 0))
+        box_width = int(round(bb['Width'] * frame_width, 0))
+        box_left = int(round(bb['Left'] * frame_width, 0))
+        box_top = int(round(bb['Top'] * frame_height, 0))
+        frame_num = int(person['Timestamp'] * fps / 1000)
+        i = person['Person']['Index']
+
+        if prev_frame is None:
+            prev_frame = frame_num
+
+        ffmpeg_boxes.append("drawbox=enable='between(n,{},{})':x={}:y={}:w={}:h={}:color={}".format(
+            prev_frame, frame_num, box_left, box_top, box_width, box_height, box_colors[i]
+        ))
+        prev_frame = frame_num + 1
+
+    return ffmpeg_boxes
+
+
+def render_ffmpeg_bounding_boxes(infile, ffmpeg_boxes):
+    import subprocess
+
+    if not os.path.exists(infile):
+        print('Bounding Box ERROR: Local file not found:', infile)
+        return
+
+    if len(ffmpeg_boxes) == 0:
+        print('No bounding boxes in file', infile)
+        return
+
+    # write drawbox to a filter script file
+    boxstr = ',\n'.join([box for box in ffmpeg_boxes])
+    with open('filter_file.txt', 'w') as f:
+        f.write('[in]' + boxstr + '[out]')
+
+    outfile = infile.replace('.mp4', '.bb.mp4')
+    ffmpeg_cmdline = [
+        'ffmpeg',
+        '-y',
+        '-loglevel', 'quiet',
+        '-i', '\"' + infile + '\"',
+        '-filter_script', 'filter_file.txt',
+        '-codec:a', 'copy',
+        '\"' + outfile + '\"'
+        ]
+
+    try:
+        subprocess.check_call(ffmpeg_cmdline)
+    except subprocess.CalledProcessError as e:
+        if e.returncode:
+            print('Failed to render bounding boxes')
