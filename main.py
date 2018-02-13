@@ -37,18 +37,23 @@ def main():
 #    for label in detect_labels(BUCKET, 'human_present.jpg'):
 #        print("{Name} - {Confidence:.1f}%".format(**label))
 
-    # Analyze some mp4 video
-    # file = 'DT inside back door_20180109_080816.mp4'
-
-    file = 'monon_person_dog_20180130_122001.mp4'
-#    file = 'monon_1_bike_20180130_121732.mp4'
-    file = 'monon_1_person_20180130_120128.mp4'
-    file = 'steph_exit_dt_20180130_124658.mp4'
-    #file = 'piero_enters_bike_dt_20180130_133618.mp4'
+    # A collection of test files from various cameras.
+    files = [
+        'DT inside back door_20180109_080816.mp4',
+        'monon_person_dog_20180130_122001.mp4',
+        'monon_1_bike_20180130_121732.mp4',
+        'monon_1_person_20180130_120128.mp4',
+        'steph_exit_dt_20180130_124658.mp4',
+        'piero_enters_bike_dt_20180130_133618.mp4',
+        'sunglass_dude_exit_dt_20180130_131129.mp4',
+        'monon_nothing_20180202_120908.mp4',
+        'mike_enters_dt_20180130_131208.mp4',
+        'car_leaving_lot_20180212_143213.mp4'
+    ]
 
     # start_detect.start_face_detect(BUCKET, file)
-    # start_detect.start_label_detect(BUCKET, file)
-    start_detect.start_person_tracking(BUCKET, file)
+    start_detect.start_label_detect(BUCKET, files[8])
+    #start_detect.start_person_tracking(BUCKET, file)
 
     try:
         print('Ctrl-C to exit ...')

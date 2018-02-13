@@ -20,6 +20,8 @@ import os
 import json
 from datetime import datetime as dt
 from threading import Thread
+
+import subprocess
 import pprint
 
 REGION = os.environ.get('AWS_REGION', 'us-east-1')
@@ -181,36 +183,53 @@ class RekogResultListener(Thread):
 
 
 def convert_to_ffmpeg_boxes(videometa, persons):
-    # persons is a list of tracking result time-series bounding boxes, sorted by TIMESTAMP
-    # see https://stackoverflow.com/questions/17339841/ffmpeg-drawbox-on-a-given-frame
-
+    """
+    Takes a list of Persons from Rekognition PersonTracking output (sorted by TIMESTAMP)
+    and extracts the bounding boxes for each indexed person, then formats the list of boxes
+    so that they can be ingested by ffmpeg as a linear video filter.
+    :param videometa: a dict of video metadata parameters to convert from normalized to pixel
+    :param persons: a list of person bounding box data sorted by TIMESTAMP, then INDEX
+    :return: A list of strings that contain ffmpeg
+    """
     frame_height = videometa['FrameHeight']
     frame_width = videometa['FrameWidth']
     fps = int(round(videometa['FrameRate'], 0))
-    box_colors = ['yellow', 'red', 'white', 'green', 'lightcyan']  # TODO only handles 5 persons per image
+    box_colors = [
+        'yellow', 'red', 'white', 'green', 'lightcyan',
+        'limegreen', 'magenta', 'lightpink', 'lightsalmon', 'yellowgreen'
+    ]  # TODO only handles 10 persons per image
 
     # Assumes that persons is a list of persons and their bounding box timelines.
     prev_frame = None
     ffmpeg_boxes = []
     for person in persons:
-        # convert box coordinates from normalized floats, to pixel ints
-        p = person['Person']
+        bb = person['Person'].get('BoundingBox')
 
-        # it seems that sometimes, Rekognition can mix Person and Face detection results together ..
-        bb = p.get('BoundingBox')
+        # It seems that sometimes, Rekognition can mix Person and Face detection results together.
+        # In this case there will exist an extra 'Face' dict in each person element.  Just discard for now.
         if bb is None:
-            bb = p['Face'].get('BoundingBox')
+            print('WARNING found a face box inside person data')
+            continue
 
+        # convert box coordinates from normalized floats, to pixel ints
         box_height = int(round(bb['Height'] * frame_height, 0))
         box_width = int(round(bb['Width'] * frame_width, 0))
         box_left = int(round(bb['Left'] * frame_width, 0))
         box_top = int(round(bb['Top'] * frame_height, 0))
-        frame_num = int(person['Timestamp'] * fps / 1000)
-        i = person['Person']['Index']
 
+        i = person['Person']['Index']
+        if i >= len(box_colors):
+            print('ERROR person index is out of range:', i)
+            continue
+
+        frame_num = int(person['Timestamp'] * fps / 1000)
         if prev_frame is None:
             prev_frame = frame_num
 
+        # Create an ffmpeg style drawbox filter notation for each person-box.
+        # Since the drawbox filter supports timeline edit notation, I keep the box visible from
+        # for the span of frames since the previous box was rendered.
+        # TODO Timeline notation does not account for separate person indexes
         ffmpeg_boxes.append("drawbox=enable='between(n,{},{})':x={}:y={}:w={}:h={}:color={}".format(
             prev_frame, frame_num, box_left, box_top, box_width, box_height, box_colors[i]
         ))
@@ -220,14 +239,16 @@ def convert_to_ffmpeg_boxes(videometa, persons):
 
 
 def render_ffmpeg_bounding_boxes(infile, ffmpeg_boxes):
-    import subprocess
+    # see https://stackoverflow.com/questions/17339841/ffmpeg-drawbox-on-a-given-frame
+    outfile = infile.replace('.mp4', '.bb.mp4')
+    print('Render {} bounding boxes to file {}'.format(len(ffmpeg_boxes), outfile))
 
     if not os.path.exists(infile):
         print('Bounding Box ERROR: Local file not found:', infile)
         return
 
     if len(ffmpeg_boxes) == 0:
-        print('No bounding boxes in file', infile)
+        print('No bounding boxes to render.', infile)
         return
 
     # write drawbox to a filter script file
@@ -235,7 +256,6 @@ def render_ffmpeg_bounding_boxes(infile, ffmpeg_boxes):
     with open('filter_file.txt', 'w') as f:
         f.write('[in]' + boxstr + '[out]')
 
-    outfile = infile.replace('.mp4', '.bb.mp4')
     ffmpeg_cmdline = [
         'ffmpeg',
         '-y',
@@ -250,4 +270,7 @@ def render_ffmpeg_bounding_boxes(infile, ffmpeg_boxes):
         subprocess.check_call(ffmpeg_cmdline)
     except subprocess.CalledProcessError as e:
         if e.returncode:
-            print('Failed to render bounding boxes')
+            print('Failed to render bounding boxes.')
+            return
+
+    print('Bounding box render is complete.')

@@ -6,7 +6,7 @@ from datetime import datetime as dt
 # a detected label. Confidence represents how certain Amazon Rekognition is that a label
 # is correctly identified. 0 is the lowest confidence. 100 is the highest confidence.
 # Rekognition Video doesn't return any labels with a confidence level lower than this specified value.
-MIN_CONFIDENCE = 50.0
+MIN_CONFIDENCE = 90.0
 MAX_LABELS = os.environ.get('MAX_LABELS', 123)
 
 # User environment params
